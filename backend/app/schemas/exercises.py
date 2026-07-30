@@ -7,6 +7,7 @@ class EsercizioBase(BaseModel):
     descrizione: Optional[str] = Field(None, example="Traccia il pallino rosso con gli occhi")
     durata_consigliata_sec: int = Field(..., gt=0, example=60)
     categoria: Optional[str] = Field(None, example="Saccadi")
+    codice: Optional[str] = Field(None, example="inseguimento_visivo")
 
 # --- SCHEMA INSERIMENTO ---
 class EsercizioCreate(EsercizioBase):
@@ -18,9 +19,11 @@ class EsercizioUpdate(BaseModel):
     descrizione: Optional[str] = None
     durata_consigliata_sec: Optional[int] = Field(None, gt=0)
     categoria: Optional[str] = None
+    codice: Optional[str] = None
 
 # --- SCHEMA RISPOSTA ---
 class EsercizioResponse(EsercizioBase):
     id_esercizio: int
+    codice: str
 
     model_config = {"from_attributes": True}

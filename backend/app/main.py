@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.database import init_db, engine
 from app.core.db_seed import seed_exercises
-from app.api.routes import auth, sessions, exercises  # Importiamo il router delle rotte di autenticazione
+from app.api.routes import auth, sessions, exercises, metrics, calibration, achievements
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +37,10 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(sessions.router, prefix=settings.API_V1_STR)
 app.include_router(exercises.router, prefix=settings.API_V1_STR)
+app.include_router(metrics.router, prefix=settings.API_V1_STR)
+app.include_router(calibration.router, prefix=settings.API_V1_STR)
+app.include_router(achievements.router, prefix=settings.API_V1_STR)
+
 
 @app.get("/")
 def root():
