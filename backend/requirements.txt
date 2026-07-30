@@ -1,0 +1,21 @@
+# Core Framework & Data Validation
+fastapi>=0.100.0
+sqlmodel>=0.0.14
+pydantic>=2.0
+uvicorn[standard]
+pydantic-settings
+pydantic[email]
+python-multipart
+
+# Database Drivers
+psycopg2-binary>=2.9.0    # Driver per PostgreSQL in produzione/Docker
+asyncpg>=0.28.0            
+
+# Database Migrations
+alembic>=1.11.0            
+
+# Sicurezza & Utilità
+python-jose[cryptography]  # Per la gestione dei token JWT         # Per l'hashing delle password
+python-dotenv              # Per leggere il file .env
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
