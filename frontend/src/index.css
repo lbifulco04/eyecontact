@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: "Inter", sans-serif;
+    /* Sfondo chiaro con due tinte soffuse: lilla in alto, verde mare in basso.
+       Opacità basse per restare "airy", coerente con un tema chiaro. */
+    background:
+      radial-gradient(circle at 12% 0%, rgba(167, 139, 217, 0.16) 0%, transparent 45%),
+      radial-gradient(circle at 90% 30%, rgba(95, 201, 174, 0.14) 0%, transparent 50%),
+      #FBF9FD;
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  h1, h2, h3, h4 {
+    font-family: "Fraunces", serif;
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: #A78BD9;
+    color: #FBF9FD;
+  }
+  :focus-visible {
+    outline: 2px solid #8B6FC7;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-mono text-xs uppercase tracking-[0.2em] text-lilac-600;
+  }
+  .glass-panel {
+    @apply bg-white/70 border border-lilac-200 backdrop-blur-sm rounded-2xl shadow-sm shadow-lilac-200/40;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-lilac-500 text-white font-semibold px-6 py-3 transition hover:bg-lilac-600 hover:shadow-glow active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-ink-300/50 text-ink-700 font-medium px-6 py-3 transition hover:border-sea-500 hover:text-sea-600;
+  }
+  .input-field {
+    @apply w-full rounded-xl bg-white border border-ink-300/40 px-4 py-3 text-ink-900 placeholder:text-ink-300 focus:border-lilac-400 outline-none transition;
+  }
+}
