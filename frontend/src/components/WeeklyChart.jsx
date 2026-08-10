@@ -1,55 +1,29 @@
-import React from "react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from "recharts";
+import React from 'react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
 export default function WeeklyChart({ data }) {
   return (
-    <div className="glass-panel p-6">
-      <span className="eyebrow">Attività ultimi 7 giorni</span>
-      <div className="h-56 mt-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="seaFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3FAF93" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#3FAF93" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EAE1F4" vertical={false} />
-            <XAxis
-              dataKey="giorno_settimana"
-              stroke="#6B6478"
-              fontSize={12}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis stroke="#6B6478" fontSize={12} tickLine={false} axisLine={false} width={36} />
-            <Tooltip
-              contentStyle={{
-                background: "#FFFFFF",
-                border: "1px solid #EAE1F4",
-                borderRadius: 12,
-                color: "#251F30",
-              }}
-              formatter={(value) => [`${value} min`, "Allenamento"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="minuti"
-              stroke="#2E8E76"
-              strokeWidth={2}
-              fill="url(#seaFill)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+    <div className="rounded-2xl border border-ink-border bg-ink-panel/70 shadow-card p-5">
+      <h3 className="font-display font-semibold mb-4">Attività ultimi 7 giorni</h3>
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id="gazeGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4CC9F0" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#4CC9F0" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#262F47" vertical={false} />
+          <XAxis dataKey="giorno_settimana" stroke="#8B93AC" fontSize={12} tickLine={false} axisLine={false} />
+          <YAxis stroke="#8B93AC" fontSize={12} tickLine={false} axisLine={false} />
+          <Tooltip
+            contentStyle={{ background: '#121826', border: '1px solid #262F47', borderRadius: 12 }}
+            labelStyle={{ color: '#EDEFF7' }}
+            formatter={(value) => [`${value} min`, 'Allenamento']}
+          />
+          <Area type="monotone" dataKey="minuti" stroke="#4CC9F0" strokeWidth={2} fill="url(#gazeGradient)" />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
-  );
+  )
 }

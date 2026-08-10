@@ -1,45 +1,38 @@
-import React, { useEffect, useState } from "react";
-import { AchievementsAPI } from "../lib/endpoints.js";
-import { apiErrorMessage } from "../lib/api.js";
-import BadgeCard from "../components/BadgeCard.jsx";
+import React, { useEffect, useState } from 'react'
+import AppShell from '../components/layout/AppShell.jsx'
+import BadgeCard from '../components/BadgeCard.jsx'
+import { achievementsUtente } from '../lib/api/achievements.js'
 
 export default function Achievements() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const [data, setData] = useState(null)
 
   useEffect(() => {
-    AchievementsAPI.mine()
-      .then(({ data }) => setData(data))
-      .catch((err) => setError(apiErrorMessage(err)));
-  }, []);
+    achievementsUtente().then(setData)
+  }, [])
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
-      <span className="eyebrow">Traguardi</span>
-      <div className="flex items-baseline justify-between mt-2">
-        <h1 className="font-display text-3xl font-semibold">I tuoi badge</h1>
+    <AppShell>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-semibold">Traguardi</h1>
+          <p className="text-mist-muted mt-1">Ogni sessione costante ti avvicina al prossimo badge</p>
+        </div>
         {data && (
-          <span className="font-mono text-sm text-ink-500">
-            {data.totale_badge_sbloccati}/{data.totale_badge} sbloccati
+          <span className="data-num text-lg text-iris">
+            {data.totale_badge_sbloccati}/{data.totale_badge}
           </span>
         )}
       </div>
 
-      {error && (
-        <div className="mt-6 text-sm text-amber-400 bg-amber-400/10 rounded-lg px-4 py-3">
-          {error}
-        </div>
-      )}
-
-      {!data && !error && <div className="mt-10 text-ink-500 text-sm">Caricamento traguardi…</div>}
-
-      {data && (
-        <div className="grid sm:grid-cols-2 gap-4 mt-8">
+      {!data ? (
+        <div className="text-mist-muted">Caricamento traguardi…</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {data.badge.map((b) => (
             <BadgeCard key={b.id_badge} badge={b} />
           ))}
         </div>
       )}
-    </div>
-  );
+    </AppShell>
+  )
 }

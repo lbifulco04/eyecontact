@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.database import init_db, engine
 from app.core.db_seed import seed_exercises
-from app.api.routes import auth, sessions, exercises, metrics, calibration, achievements
+from app.api.routes import auth, sessions, exercises, metrics, calibration, achievements, telemetry
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -40,6 +40,7 @@ app.include_router(exercises.router, prefix=settings.API_V1_STR)
 app.include_router(metrics.router, prefix=settings.API_V1_STR)
 app.include_router(calibration.router, prefix=settings.API_V1_STR)
 app.include_router(achievements.router, prefix=settings.API_V1_STR)
+app.include_router(telemetry.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/")

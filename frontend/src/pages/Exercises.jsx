@@ -1,71 +1,95 @@
-import React, { useEffect, useState } from "react";
-import { ExercisesAPI } from "../lib/endpoints.js";
-import { apiErrorMessage } from "../lib/api.js";
-import ExerciseCard from "../components/ExerciseCard.jsx";
+import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import AppShell from '../components/layout/AppShell.jsx'
+import { listaEsercizi, eserciziRaccomandati } from '../lib/api/exercises.js'
+
+const CATEGORIA_COLOR = {
+  Fissazione: 'text-iris border-iris/30 bg-iris/10',
+  Saccadi: 'text-amber border-amber/30 bg-amber/10',
+  Inseguimento: 'text-okgreen border-okgreen/30 bg-okgreen/10'
+}
 
 export default function Exercises() {
-  const [esercizi, setEsercizi] = useState([]);
-  const [affaticamento, setAffaticamento] = useState(5);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const loadRecommended = (livello) => {
-    setLoading(true);
-    ExercisesAPI.recommended(livello)
-      .then(({ data }) => setEsercizi(data))
-      .catch((err) => setError(apiErrorMessage(err)))
-      .finally(() => setLoading(false));
-  };
+  const navigate = useNavigate()
+  const [affaticamento, setAffaticamento] = useState(5)
+  const [esercizi, setEsercizi] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadRecommended(affaticamento);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setLoading(true)
+    eserciziRaccomandati(affaticamento)
+      .then(setEsercizi)
+      .catch(() => listaEsercizi().then(setEsercizi))
+      .finally(() => setLoading(false))
+  }, [affaticamento])
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
-      <span className="eyebrow">Catalogo</span>
-      <h1 className="font-display text-3xl font-semibold mt-2">Scegli il tuo esercizio</h1>
-      <p className="text-ink-500 mt-2 max-w-xl">
-        Indica il tuo livello di affaticamento visivo attuale: ti consigliamo gli esercizi più
-        adatti in questo momento.
+    <AppShell>
+      <h1 className="font-display text-2xl md:text-3xl font-semibold mb-2">Catalogo esercizi</h1>
+      <p className="text-mist-muted mb-6">
+        Dichiara il tuo affaticamento visivo attuale per ricevere esercizi mirati.
       </p>
 
-      <div className="glass-panel p-5 mt-6 flex items-center gap-4">
-        <span className="text-sm text-ink-500 shrink-0 font-mono">Affaticamento</span>
+      <div className="rounded-2xl border border-ink-border bg-ink-panel/70 shadow-card p-5 mb-8 max-w-xl">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-mist-muted">Affaticamento visivo</span>
+          <span className="data-num text-iris font-semibold">{affaticamento}/10</span>
+        </div>
         <input
           type="range"
           min={1}
           max={10}
           value={affaticamento}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            setAffaticamento(v);
-            loadRecommended(v);
-          }}
-          className="w-full accent-sea-500"
+          onChange={(e) => setAffaticamento(Number(e.target.value))}
+          className="w-full accent-iris"
         />
-        <span className="font-mono text-sea-500 w-6 text-right">{affaticamento}</span>
+        <div className="flex justify-between text-xs text-mist-muted mt-1">
+          <span>Riposato</span>
+          <span>Molto affaticato</span>
+        </div>
       </div>
 
-      {error && (
-        <div className="mt-6 text-sm text-amber-400 bg-amber-400/10 rounded-lg px-4 py-3">
-          {error}
-        </div>
-      )}
-
       {loading ? (
-        <div className="mt-10 text-ink-500 text-sm">Caricamento esercizi…</div>
+        <div className="text-mist-muted">Caricamento esercizi…</div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-8">
-          {esercizi.map((e) => (
-            <ExerciseCard key={e.id_esercizio} esercizio={e} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {esercizi.map((ex, i) => (
+            <motion.div
+              key={ex.id_esercizio}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              className="rounded-2xl border border-ink-border bg-ink-panel/70 shadow-card p-5 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="font-display font-semibold">{ex.nome}</h3>
+                {ex.categoria && (
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full border ${
+                      CATEGORIA_COLOR[ex.categoria] || 'text-mist-muted border-ink-border'
+                    }`}
+                  >
+                    {ex.categoria}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-mist-muted flex-1">{ex.descrizione}</p>
+              <div className="flex items-center justify-between">
+                <span className="data-num text-sm text-mist-muted">
+                  {ex.durata_consigliata_sec}s consigliati
+                </span>
+                <button
+                  onClick={() => navigate(`/esercizi/${ex.id_esercizio}/sessione`)}
+                  className="text-sm font-semibold bg-iris/15 text-iris rounded-lg px-3 py-1.5 hover:bg-iris/25 transition"
+                >
+                  Avvia
+                </button>
+              </div>
+            </motion.div>
           ))}
-          {esercizi.length === 0 && (
-            <p className="text-ink-500 text-sm">Nessun esercizio disponibile al momento.</p>
-          )}
         </div>
       )}
-    </div>
-  );
+    </AppShell>
+  )
 }

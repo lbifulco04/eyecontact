@@ -9,12 +9,11 @@ class EsercizioInSessione(SQLModel, table=True):
     id_dettaglio: Optional[int] = Field(default=None, primary_key=True)
     id_sessione: int = Field(foreign_key="sessione.id_sessione", ondelete="CASCADE")
     id_esercizio: int = Field(foreign_key="esercizio.id_esercizio", ondelete="RESTRICT")
-    
+
     tempo_target_sec: int
     tempo_effettivo_sec: int
     completato: bool = Field(default=False)
 
-    # Relazioni verso le entità principali
     sessione: Optional["Sessione"] = Relationship(back_populates="dettagli_esercizi")
     esercizio: Optional["Esercizio"] = Relationship(back_populates="dettagli_sessioni")
 
@@ -30,23 +29,20 @@ class Utente(SQLModel, table=True):
     data_registrazione: datetime = Field(default_factory=datetime.utcnow)
     ultimo_accesso: Optional[datetime] = None
 
-    # Relazioni (1:1 con Metriche, 1:N con Sessioni)
     metriche: Optional["MetricheUtente"] = Relationship(
-        back_populates="utente", 
+        back_populates="utente",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
     sessioni: List["Sessione"] = Relationship(back_populates="utente")
 
 
-
-# 3. ENTITÀ METRICHE UTENTE 
-
+# 3. ENTITÀ METRICHE UTENTE
 class MetricheUtente(SQLModel, table=True):
     __tablename__ = "metriche_utente"
 
     id_metrica: Optional[int] = Field(default=None, primary_key=True)
     id_utente: int = Field(foreign_key="utente.id_utente", unique=True, ondelete="CASCADE")
-    
+
     giorni_consecutivi_streak: int = Field(default=0)
     tempo_totale_allenamento_sec: int = Field(default=0)
     sessioni_completate_totali: int = Field(default=0)
@@ -68,14 +64,13 @@ class Esercizio(SQLModel, table=True):
     dettagli_sessioni: List[EsercizioInSessione] = Relationship(back_populates="esercizio")
 
 
-
 # 5. ENTITÀ SESSIONE
 class Sessione(SQLModel, table=True):
     __tablename__ = "sessione"
 
     id_sessione: Optional[int] = Field(default=None, primary_key=True)
     id_utente: int = Field(foreign_key="utente.id_utente", ondelete="CASCADE")
-    
+
     data_ora_inizio: datetime = Field(default_factory=datetime.utcnow)
     durata_totale_sec: int
     affaticamento_pre: Optional[int] = None
@@ -86,3 +81,22 @@ class Sessione(SQLModel, table=True):
 
     utente: Optional[Utente] = Relationship(back_populates="sessioni")
     dettagli_esercizi: List[EsercizioInSessione] = Relationship(back_populates="sessione")
+    telemetria: List["TelemetriaSguardo"] = Relationship(back_populates="sessione")
+
+
+# 6. ENTITÀ TELEMETRIA SGUARDO (nuova - collega lo schema telemetry.py già presente,
+#    finora privo di una rotta/tabella dedicata)
+class TelemetriaSguardo(SQLModel, table=True):
+    __tablename__ = "telemetria_sguardo"
+
+    id_telemetria: Optional[int] = Field(default=None, primary_key=True)
+    id_sessione: int = Field(foreign_key="sessione.id_sessione", ondelete="CASCADE")
+
+    precisione_fissazione_pct: float
+    frequenza_lampeggio_pm: Optional[float] = None
+    distanza_schermo_cm_media: Optional[float] = None
+    saccadi_perse_count: int = Field(default=0)
+    avvisi_postura_count: int = Field(default=0)
+    data_registrazione: datetime = Field(default_factory=datetime.utcnow)
+
+    sessione: Optional[Sessione] = Relationship(back_populates="telemetria")

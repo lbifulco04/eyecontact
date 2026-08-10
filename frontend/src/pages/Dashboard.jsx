@@ -1,72 +1,89 @@
-import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { MetricsAPI } from "../lib/endpoints.js";
-import { apiErrorMessage } from "../lib/api.js";
-import StatCard from "../components/StatCard.jsx";
-import WeeklyChart from "../components/WeeklyChart.jsx";
-import { useAuth } from "../context/AuthContext.jsx";
+import React, { useEffect, useState } from 'react'
+import { Flame, Clock, Trophy, CalendarClock } from 'lucide-react'
+import AppShell from '../components/layout/AppShell.jsx'
+import StatCard from '../components/StatCard.jsx'
+import WeeklyChart from '../components/WeeklyChart.jsx'
+import GazeReticle from '../components/GazeReticle.jsx'
+import { dashboardMetriche } from '../lib/api/metrics.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { Link } from 'react-router-dom'
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const { user } = useAuth()
+  const [metriche, setMetriche] = useState(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    MetricsAPI.dashboard()
-      .then(({ data }) => setData(data))
-      .catch((err) => setError(apiErrorMessage(err)));
-  }, []);
+    dashboardMetriche()
+      .then(setMetriche)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const ultimoAllenamento = metriche?.ultimo_allenamento
+    ? new Date(metriche.ultimo_allenamento).toLocaleDateString('it-IT', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : 'Nessuno ancora'
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-10">
-      <span className="eyebrow">Dashboard</span>
-      <h1 className="font-display text-3xl font-semibold mt-2">
-        Bentornato, {user?.nome_display || user?.email?.split("@")[0]}
-      </h1>
-
-      {error && (
-        <div className="mt-6 text-sm text-amber-400 bg-amber-400/10 rounded-lg px-4 py-3">
-          {error}
+    <AppShell>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-semibold">
+            Bentornato, {user?.nome_display || 'atleta visivo'}
+          </h1>
+          <p className="text-mist-muted mt-1">Ecco il tuo stato di allenamento oculare</p>
         </div>
-      )}
+        <div className="hidden md:block">
+          <GazeReticle mode="idle" size={56} />
+        </div>
+      </div>
 
-      {!data && !error && (
-        <div className="mt-10 text-ink-500 text-sm">Caricamento metriche…</div>
-      )}
-
-      {data && (
+      {loading ? (
+        <div className="text-mist-muted">Caricamento metriche…</div>
+      ) : (
         <>
-          <div className="grid sm:grid-cols-3 gap-5 mt-8">
-            <StatCard label="Streak" value={data.streak_giorni} unit="giorni consecutivi" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <StatCard icon={Flame} label="Streak" value={metriche.streak_giorni} suffix="giorni" accent="amber" />
             <StatCard
+              icon={Clock}
               label="Tempo totale"
-              value={data.tempo_totale_minuti}
-              unit="minuti"
-              accent="lilac"
+              value={metriche.tempo_totale_minuti}
+              suffix="min"
             />
-            <StatCard label="Sessioni completate" value={data.sessioni_completate_totali} unit="totali" />
+            <StatCard
+              icon={Trophy}
+              label="Sessioni completate"
+              value={metriche.sessioni_completate_totali}
+              accent="green"
+            />
+            <StatCard icon={CalendarClock} label="Ultimo allenamento" value={ultimoAllenamento} />
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-5 mt-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
-              <WeeklyChart data={data.attivita_settimanale} />
+              <WeeklyChart data={metriche.attivita_settimanale} />
             </div>
-            <div className="glass-panel p-6 flex flex-col justify-between">
+            <div className="rounded-2xl border border-ink-border bg-gradient-to-br from-iris/10 to-transparent shadow-card p-6 flex flex-col justify-between">
               <div>
-                <span className="eyebrow">Ultimo allenamento</span>
-                <p className="font-display text-lg mt-2">
-                  {data.ultimo_allenamento
-                    ? new Date(data.ultimo_allenamento).toLocaleString("it-IT")
-                    : "Nessun allenamento ancora registrato"}
+                <h3 className="font-display font-semibold text-lg">Pronto per un esercizio?</h3>
+                <p className="text-mist-muted text-sm mt-2">
+                  Il tracciamento oculare live misura fissazione, saccadi e postura in tempo reale.
                 </p>
               </div>
-              <Link to="/esercizi" className="btn-primary mt-6">
-                Inizia un esercizio
+              <Link
+                to="/esercizi"
+                className="mt-6 inline-flex items-center justify-center bg-iris text-ink font-semibold rounded-xl py-2.5 hover:brightness-110 transition"
+              >
+                Inizia allenamento
               </Link>
             </div>
           </div>
         </>
       )}
-    </div>
-  );
+    </AppShell>
+  )
 }
