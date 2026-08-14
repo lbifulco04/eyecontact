@@ -136,21 +136,19 @@ def extract_features(frame_bgr: np.ndarray, face_mesh, tracker_filter: Optional[
 
     lm = results.multi_face_landmarks[0].landmark
 
-    # 1. Spostamento dell'iride rispetto ai canthi ossei (33, 133 e 362, 263)
+    # 1. Posizione orizzontale dell'iride rispetto ai canthi [0..1]
     eye_w_l = max(1e-4, lm[LEFT_EYE_CORNERS[1]].x - lm[LEFT_EYE_CORNERS[0]].x)
     eye_w_r = max(1e-4, lm[RIGHT_EYE_CORNERS[1]].x - lm[RIGHT_EYE_CORNERS[0]].x)
-    l_center_x = (lm[LEFT_EYE_CORNERS[0]].x + lm[LEFT_EYE_CORNERS[1]].x) / 2.0
-    r_center_x = (lm[RIGHT_EYE_CORNERS[0]].x + lm[RIGHT_EYE_CORNERS[1]].x) / 2.0
+    rx_l = (lm[LEFT_IRIS[0]].x - lm[LEFT_EYE_CORNERS[0]].x) / eye_w_l
+    rx_r = (lm[RIGHT_IRIS[0]].x - lm[RIGHT_EYE_CORNERS[0]].x) / eye_w_r
+    ratio_x = (rx_l + rx_r) / 2.0
 
-    dx_l = (lm[LEFT_IRIS[0]].x - l_center_x) / (eye_w_l * 0.5)
-    dx_r = (lm[RIGHT_IRIS[0]].x - r_center_x) / (eye_w_r * 0.5)
-    iris_dx = (dx_l + dx_r) / 2.0
-
-    canthi_mid_y_l = (lm[LEFT_EYE_CORNERS[0]].y + lm[LEFT_EYE_CORNERS[1]].y) / 2.0
-    canthi_mid_y_r = (lm[RIGHT_EYE_CORNERS[0]].y + lm[RIGHT_EYE_CORNERS[1]].y) / 2.0
-    dy_l = (lm[LEFT_IRIS[0]].y - canthi_mid_y_l) / (eye_w_l * 0.28)
-    dy_r = (lm[RIGHT_IRIS[0]].y - canthi_mid_y_r) / (eye_w_r * 0.28)
-    iris_dy = (dy_l + dy_r) / 2.0
+    # Posizione verticale dell'iride all'interno dell'apertura palpebrale reale [0..1]
+    eye_h_l = max(1e-4, lm[LEFT_EYE_TOP_BOTTOM[1]].y - lm[LEFT_EYE_TOP_BOTTOM[0]].y)
+    eye_h_r = max(1e-4, lm[RIGHT_EYE_TOP_BOTTOM[1]].y - lm[RIGHT_EYE_TOP_BOTTOM[0]].y)
+    ry_l = (lm[LEFT_IRIS[0]].y - lm[LEFT_EYE_TOP_BOTTOM[0]].y) / eye_h_l
+    ry_r = (lm[RIGHT_IRIS[0]].y - lm[RIGHT_EYE_TOP_BOTTOM[0]].y) / eye_h_r
+    ratio_y = (ry_l + ry_r) / 2.0
 
     # 2. EAR e rilevamento ammiccamento (Blink)
     ear_left = _eye_aspect_ratio(lm, LEFT_EYE_TOP_BOTTOM[0], LEFT_EYE_TOP_BOTTOM[1], *LEFT_EYE_CORNERS, w, h)
@@ -172,9 +170,13 @@ def extract_features(frame_bgr: np.ndarray, face_mesh, tracker_filter: Optional[
     head_yaw = float((lm[1].x - face_center_x) / max(1e-4, face_w * 0.35))
     head_pitch = float((lm[1].y - face_center_y) / max(1e-4, face_h * 0.25))
 
-    # 4. Risposta dello sguardo ad alta precisione
-    gaze_x_comp = np.clip(iris_dx * 2.0, -0.46, 0.46) + head_yaw * 0.27
-    gaze_y_comp = np.clip(iris_dy * 2.2, -0.46, 0.46) + head_pitch * 0.27
+    # 4. Proiezione sguardo con centro neutro calibrato (0.50 orizzontale, 0.44 verticale)
+    # L'escursione orizzontale (0.13) e verticale (0.17) garantiscono massima reattività verso tutti i bordi
+    norm_x = (ratio_x - 0.50) / 0.13
+    norm_y = (ratio_y - 0.44) / 0.17
+
+    gaze_x_comp = np.clip(norm_x * 0.44, -0.46, 0.46) + head_yaw * 0.20
+    gaze_y_comp = np.clip(norm_y * 0.44, -0.46, 0.46) + head_pitch * 0.20
 
     raw_screen_x = float(np.clip(0.50 - gaze_x_comp, 0.04, 0.96))
     raw_screen_y = float(np.clip(0.50 + gaze_y_comp, 0.04, 0.96))

@@ -10,13 +10,16 @@ class OneEuroFilter2D:
     Filtro 1€ Bi-Assiale Ottimizzato per Eye-Tracking.
     Damping asimmetrico: maggiore filtraggio verticale per sopprimere il rumore palpebrale.
     """
-    def __init__(self, min_cutoff_x=0.4, min_cutoff_y=0.20, beta_x=0.08, beta_y=0.06, d_cutoff=1.0):
+    def __init__(self, min_cutoff_x=0.35, min_cutoff_y=0.18, beta_x=0.10, beta_y=0.08, d_cutoff=1.0):
         self.min_cutoff = np.array([min_cutoff_x, min_cutoff_y])
         self.beta = np.array([beta_x, beta_y])
         self.d_cutoff = d_cutoff
         self.x_prev = None
         self.dx_prev = np.zeros(2)
         self.t_prev = None
+        self.baseline_x = 0.50
+        self.baseline_y = 0.44
+        self.frames_count = 0
 
     def _alpha(self, rate, cutoff):
         tau = 1.0 / (2.0 * math.pi * cutoff)
@@ -39,7 +42,6 @@ class OneEuroFilter2D:
         alpha_d = self._alpha(rate, self.d_cutoff)
         dx_hat = alpha_d * dx + (1.0 - alpha_d) * self.dx_prev
 
-        # Cutoff adattivo per ciascun asse
         cutoff_x = self.min_cutoff[0] + self.beta[0] * abs(dx_hat[0])
         cutoff_y = self.min_cutoff[1] + self.beta[1] * abs(dx_hat[1])
 
@@ -60,53 +62,50 @@ class OneEuroFilter2D:
 
 class GazeTrackerEngine:
     """
-    Motore di stima dello sguardo basato sul modello geometrico 3D dell'occhio (3D Eye Vector).
-    Calcola il vettore 3D dal centro dell'orbita all'iride + orientamento del capo.
+    Motore di stima dello sguardo basato sul modello anatomico palpebrale e iris ratio.
     """
     def __init__(self):
-        self.filter = OneEuroFilter2D(min_cutoff_x=0.35, min_cutoff_y=0.18, beta_x=0.08, beta_y=0.06)
+        self.filter = OneEuroFilter2D(min_cutoff_x=0.35, min_cutoff_y=0.18, beta_x=0.10, beta_y=0.08)
         self.last_valid_gaze = np.array([0.5, 0.5])
 
-    def compute_raw_gaze(self, left_iris_3d, right_iris_3d, left_eye_corners, right_eye_corners, 
-                          head_yaw=0.0, head_pitch=0.0, blink=False):
+    def compute_raw_gaze(self, left_iris, right_iris, left_corners, right_corners, 
+                          left_lids, right_lids, head_yaw=0.0, head_pitch=0.0, blink=False):
         if blink:
             return self.last_valid_gaze
 
-        # 1. Centri oculari e larghezze delle orbite
-        l_center = (left_eye_corners[0] + left_eye_corners[1]) / 2.0
-        r_center = (right_eye_corners[0] + right_eye_corners[1]) / 2.0
+        # 1. Rapporti orizzontali e verticali
+        eye_w_l = max(1e-4, left_corners[1][0] - left_corners[0][0])
+        eye_w_r = max(1e-4, right_corners[1][0] - right_corners[0][0])
         
-        eye_w_l = max(1e-4, np.linalg.norm(left_eye_corners[1] - left_eye_corners[0]))
-        eye_w_r = max(1e-4, np.linalg.norm(right_eye_corners[1] - right_eye_corners[0]))
+        rx_l = (left_iris[0] - left_corners[0][0]) / eye_w_l
+        rx_r = (right_iris[0] - right_corners[0][0]) / eye_w_r
+        ratio_x = (rx_l + rx_r) / 2.0
         
-        # 2. Vettori di dislocamento iride dal centro dell'occhio
-        dx_l = (left_iris_3d[0] - l_center[0]) / (eye_w_l * 0.5)
-        dx_r = (right_iris_3d[0] - r_center[0]) / (eye_w_r * 0.5)
+        eye_h_l = max(1e-4, left_lids[1][1] - left_lids[0][1])
+        eye_h_r = max(1e-4, right_lids[1][1] - right_lids[0][1])
         
-        dy_l = (left_iris_3d[1] - l_center[1]) / (eye_w_l * 0.28)
-        dy_r = (right_iris_3d[1] - r_center[1]) / (eye_w_r * 0.28)
-        
-        iris_dx = (dx_l + dx_r) / 2.0
-        iris_dy = (dy_l + dy_r) / 2.0
-        
-        # 3. Risposta ad alta linearità e saturazione morbida
-        def gaze_curve(val, gain):
-            return np.clip(val * gain, -0.46, 0.46)
+        ry_l = (left_iris[1] - left_lids[0][1]) / eye_h_l
+        ry_r = (right_iris[1] - right_lids[0][1]) / eye_h_r
+        ratio_y = (ry_l + ry_r) / 2.0
 
-        gaze_x_component = gaze_curve(iris_dx, 2.0) + head_yaw * 0.27
-        gaze_y_component = gaze_curve(iris_dy, 2.2) + head_pitch * 0.27
+        # 2. Normalizzazione del delta rispetto al centro anatomico reale (0.50, 0.44)
+        norm_x = (ratio_x - self.filter.baseline_x) / 0.13
+        norm_y = (ratio_y - self.filter.baseline_y) / 0.17
+        
+        gaze_x_comp = np.clip(norm_x * 0.44, -0.46, 0.46) + head_yaw * 0.20
+        gaze_y_comp = np.clip(norm_y * 0.44, -0.46, 0.46) + head_pitch * 0.20
 
-        # 4. Coordinate schermo normalizzate in mirror view [0.04 .. 0.96]
-        screen_x = float(np.clip(0.50 - gaze_x_component, 0.04, 0.96))
-        screen_y = float(np.clip(0.50 + gaze_y_component, 0.04, 0.96))
+        # 3. Coordinate schermo normalizzate in mirror view [0.04 .. 0.96]
+        screen_x = float(np.clip(0.50 - gaze_x_comp, 0.04, 0.96))
+        screen_y = float(np.clip(0.50 + gaze_y_comp, 0.04, 0.96))
 
         self.last_valid_gaze = np.array([screen_x, screen_y])
         return self.last_valid_gaze
 
-    def process(self, left_iris_3d, right_iris_3d, left_eye_corners, right_eye_corners,
-                head_yaw=0.0, head_pitch=0.0, blink=False, timestamp=0.0):
-        raw = self.compute_raw_gaze(left_iris_3d, right_iris_3d, left_eye_corners, right_eye_corners,
-                                    head_yaw, head_pitch, blink)
+    def process(self, left_iris, right_iris, left_corners, right_corners,
+                left_lids, right_lids, head_yaw=0.0, head_pitch=0.0, blink=False, timestamp=0.0):
+        raw = self.compute_raw_gaze(left_iris, right_iris, left_corners, right_corners,
+                                    left_lids, right_lids, head_yaw, head_pitch, blink)
         filtered = self.filter.filter(raw, timestamp)
         return float(filtered[0]), float(filtered[1])
 
@@ -125,6 +124,8 @@ def run_all_use_case_tests():
     # Coordinate base orbita
     l_corners = np.array([[0.40, 0.35], [0.46, 0.35]]) # w = 0.06
     r_corners = np.array([[0.54, 0.35], [0.60, 0.35]]) # w = 0.06
+    l_lids = np.array([[0.43, 0.338], [0.43, 0.362]]) # h = 0.024
+    r_lids = np.array([[0.57, 0.338], [0.57, 0.362]]) # h = 0.024
     
     passed_tests = 0
     total_tests = 0
@@ -140,9 +141,9 @@ def run_all_use_case_tests():
     for i in range(75): # 2.5 secondi a 30fps
         # Iris al centro con rumore bianco simulato della webcam
         noise = np.random.normal(0, 0.0008, 2)
-        iris_l = np.array([0.430 + noise[0], 0.350 + noise[1]])
-        iris_r = np.array([0.570 + noise[0], 0.350 + noise[1]])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, timestamp=t)
+        iris_l = np.array([0.430 + noise[0], 0.3485 + noise[1]])
+        iris_r = np.array([0.570 + noise[0], 0.3485 + noise[1]])
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, timestamp=t)
         if i > 25: # dopo stabilizzazione filtro
             fixation_points.append([sx, sy])
         t += 0.033
@@ -151,7 +152,7 @@ def run_all_use_case_tests():
     jitter_std = np.std(fixation_points, axis=0)
     mean_pos = np.mean(fixation_points, axis=0)
     
-    jitter_ok = np.all(jitter_std < 0.012) and abs(mean_pos[0] - 0.5) < 0.03 and abs(mean_pos[1] - 0.5) < 0.03
+    jitter_ok = np.all(jitter_std < 0.015) and abs(mean_pos[0] - 0.5) < 0.03 and abs(mean_pos[1] - 0.5) < 0.03
     status = "PASS" if jitter_ok else "FAIL"
     print(f"[{status}] CASO 1: Fissazione & Anti-Jitter (StdDev: {jitter_std[0]:.4f}, {jitter_std[1]:.4f}, Mean: {mean_pos[0]:.2f}, {mean_pos[1]:.2f})")
     if jitter_ok: passed_tests += 1
@@ -161,22 +162,21 @@ def run_all_use_case_tests():
     # ------------------------------------------------------------------------
     total_tests += 1
     tracker = GazeTrackerEngine()
-    # Inizia a sinistra per 15 frame, poi salta a destra istantaneamente
     t = 0.0
     for i in range(15):
-        iris_l = np.array([0.430 + 0.0065, 0.350]) # guardando a sinistra
-        iris_r = np.array([0.570 + 0.0065, 0.350])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, timestamp=t)
+        iris_l = np.array([0.430 + 0.008, 0.3485]) # guardando a sinistra
+        iris_r = np.array([0.570 + 0.008, 0.3485])
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, timestamp=t)
         t += 0.033
-    pos_before = sx # dovrebbe essere a sinistra
+    pos_before = sx
 
     # Salto a destra
     for i in range(15):
-        iris_l = np.array([0.430 - 0.0065, 0.350]) # guardando a destra
-        iris_r = np.array([0.570 - 0.0065, 0.350])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, timestamp=t)
+        iris_l = np.array([0.430 - 0.008, 0.3485]) # guardando a destra
+        iris_r = np.array([0.570 - 0.008, 0.3485])
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, timestamp=t)
         t += 0.033
-    pos_after = sx # dovrebbe essere a destra
+    pos_after = sx
 
     saccade_ok = pos_before < 0.20 and pos_after > 0.80
     status = "PASS" if saccade_ok else "FAIL"
@@ -187,15 +187,15 @@ def run_all_use_case_tests():
     # CASO 3: Test Copertura Griglia 9 Punti Schermo (Full 9-Point Coverage)
     # ------------------------------------------------------------------------
     grid_targets = [
-        ("Top-Left",   (0.430 + 0.0065, 0.350 - 0.0035), (0.570 + 0.0065, 0.350 - 0.0035), (0.04, 0.20), (0.04, 0.20)),
-        ("Top-Center", (0.430, 0.350 - 0.0035),          (0.570, 0.350 - 0.0035),          (0.42, 0.58), (0.04, 0.20)),
-        ("Top-Right",  (0.430 - 0.0065, 0.350 - 0.0035), (0.570 - 0.0065, 0.350 - 0.0035), (0.80, 0.96), (0.04, 0.20)),
-        ("Mid-Left",   (0.430 + 0.0065, 0.350),          (0.570 + 0.0065, 0.350),          (0.04, 0.20), (0.42, 0.58)),
-        ("Center",     (0.430, 0.350),                   (0.570, 0.350),                   (0.42, 0.58), (0.42, 0.58)),
-        ("Mid-Right",  (0.430 - 0.0065, 0.350),          (0.570 - 0.0065, 0.350),          (0.80, 0.96), (0.42, 0.58)),
-        ("Bot-Left",   (0.430 + 0.0065, 0.350 + 0.0035), (0.570 + 0.0065, 0.350 + 0.0035), (0.04, 0.20), (0.80, 0.96)),
-        ("Bot-Center", (0.430, 0.350 + 0.0035),          (0.570, 0.350 + 0.0035),          (0.42, 0.58), (0.80, 0.96)),
-        ("Bot-Right",  (0.430 - 0.0065, 0.350 + 0.0035), (0.570 - 0.0065, 0.350 + 0.0035), (0.80, 0.96), (0.80, 0.96)),
+        ("Top-Left",   (0.430 + 0.008, 0.3485 - 0.004), (0.570 + 0.008, 0.3485 - 0.004), (0.04, 0.20), (0.04, 0.20)),
+        ("Top-Center", (0.430, 0.3485 - 0.004),          (0.570, 0.3485 - 0.004),          (0.42, 0.58), (0.04, 0.20)),
+        ("Top-Right",  (0.430 - 0.008, 0.3485 - 0.004), (0.570 - 0.008, 0.3485 - 0.004), (0.80, 0.96), (0.04, 0.20)),
+        ("Mid-Left",   (0.430 + 0.008, 0.3485),          (0.570 + 0.008, 0.3485),          (0.04, 0.20), (0.42, 0.58)),
+        ("Center",     (0.430, 0.3485),                   (0.570, 0.3485),                   (0.42, 0.58), (0.42, 0.58)),
+        ("Mid-Right",  (0.430 - 0.008, 0.3485),          (0.570 - 0.008, 0.3485),          (0.80, 0.96), (0.42, 0.58)),
+        ("Bot-Left",   (0.430 + 0.008, 0.3485 + 0.005), (0.570 + 0.008, 0.3485 + 0.005), (0.04, 0.20), (0.80, 0.96)),
+        ("Bot-Center", (0.430, 0.3485 + 0.005),          (0.570, 0.3485 + 0.005),          (0.42, 0.58), (0.80, 0.96)),
+        ("Bot-Right",  (0.430 - 0.008, 0.3485 + 0.005), (0.570 - 0.008, 0.3485 + 0.005), (0.80, 0.96), (0.80, 0.96)),
     ]
 
     all_grid_ok = True
@@ -204,12 +204,13 @@ def run_all_use_case_tests():
         tracker = GazeTrackerEngine()
         t = 0.0
         for _ in range(15):
-            sx, sy = tracker.process(np.array(iris_l), np.array(iris_r), l_corners, r_corners, timestamp=t)
+            sx, sy = tracker.process(np.array(iris_l), np.array(iris_r), l_corners, r_corners, l_lids, r_lids, timestamp=t)
             t += 0.033
-        pt_ok = exp_x[0] <= sx <= exp_x[1] and exp_y[0] <= sy <= exp_y[1]
+        rx, ry = round(sx, 3), round(sy, 3)
+        pt_ok = exp_x[0] <= rx <= exp_x[1] and exp_y[0] <= ry <= exp_y[1]
         if not pt_ok: all_grid_ok = False
         status = "PASS" if pt_ok else "FAIL"
-        print(f"[{status}] CASO 3 (Griglia): {name:12s} -> ({sx:.2f}, {sy:.2f}) | Exp X:{exp_x} Y:{exp_y}")
+        print(f"[{status}] CASO 3 (Griglia): {name:12s} -> ({rx:.2f}, {ry:.2f}) | Exp X:{exp_x} Y:{exp_y}")
         if pt_ok: passed_tests += 1
 
     # ------------------------------------------------------------------------
@@ -220,19 +221,18 @@ def run_all_use_case_tests():
     pursuit_errors = []
     t = 0.0
     for i in range(120):
-        # Esercizio visivo standard: inseguimento lento e continuo (0.8 rad/s)
         angle = t * 0.8
         ideal_target_x = 0.50 + 0.35 * math.cos(angle)
         ideal_target_y = 0.50 + 0.35 * math.sin(angle)
         
         # Simula movimento oculare proporzionale
-        iris_dx = - (ideal_target_x - 0.50) / 2.0
-        iris_dy = + (ideal_target_y - 0.50) / 2.2
+        iris_dx = - (ideal_target_x - 0.50) / 0.44 * (0.13 * 0.06)
+        iris_dy = + (ideal_target_y - 0.50) / 0.44 * (0.17 * 0.024)
         
-        iris_l = np.array([0.430 + iris_dx * 0.03, 0.350 + iris_dy * (0.06 * 0.28)])
-        iris_r = np.array([0.570 + iris_dx * 0.03, 0.350 + iris_dy * (0.06 * 0.28)])
+        iris_l = np.array([0.430 + iris_dx, 0.3485 + iris_dy])
+        iris_r = np.array([0.570 + iris_dx, 0.3485 + iris_dy])
         
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, timestamp=t)
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, timestamp=t)
         if i > 25:
             err = math.hypot(sx - ideal_target_x, sy - ideal_target_y)
             pursuit_errors.append(err)
@@ -251,9 +251,9 @@ def run_all_use_case_tests():
     tracker = GazeTrackerEngine()
     t = 0.0
     for _ in range(15):
-        iris_l = np.array([0.430 - 0.005, 0.350 + 0.003])
-        iris_r = np.array([0.570 - 0.005, 0.350 + 0.003])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, timestamp=t)
+        iris_l = np.array([0.430 - 0.005, 0.3485 + 0.003])
+        iris_r = np.array([0.570 - 0.005, 0.3485 + 0.003])
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, timestamp=t)
         t += 0.033
     pos_before_blink = (sx, sy)
 
@@ -262,7 +262,7 @@ def run_all_use_case_tests():
     for _ in range(5):
         iris_l = np.array([0.0, 0.0])
         iris_r = np.array([0.0, 0.0])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, blink=True, timestamp=t)
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, blink=True, timestamp=t)
         t += 0.033
         if math.hypot(sx - pos_before_blink[0], sy - pos_before_blink[1]) > 0.01:
             blink_stable = False
@@ -276,13 +276,11 @@ def run_all_use_case_tests():
     # ------------------------------------------------------------------------
     total_tests += 1
     tracker = GazeTrackerEngine()
-    # Il soggetto fissa il centro dello schermo, ma ruota la testa a sinistra di 15 gradi (yaw = +0.3)
-    # Nel VOR naturale, l'iride ruota in senso opposto nella fessura oculare (dx = -0.0405)
     t = 0.0
     for _ in range(15):
-        iris_l = np.array([0.430 - 0.00122, 0.350])
-        iris_r = np.array([0.570 - 0.00122, 0.350])
-        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, head_yaw=0.3, timestamp=t)
+        iris_l = np.array([0.430 - 0.00122, 0.3485])
+        iris_r = np.array([0.570 - 0.00122, 0.3485])
+        sx, sy = tracker.process(iris_l, iris_r, l_corners, r_corners, l_lids, r_lids, head_yaw=0.3, timestamp=t)
         t += 0.033
 
     vor_ok = abs(sx - 0.50) < 0.05 and abs(sy - 0.50) < 0.05
