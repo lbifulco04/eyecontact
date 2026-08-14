@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import AppShell from '../components/layout/AppShell.jsx'
 import GazeReticle from '../components/GazeReticle.jsx'
+import GazePointer from '../components/GazePointer.jsx'
+import CameraPreview from '../components/CameraPreview.jsx'
 import { useEyeTracking } from '../hooks/useEyeTracking.js'
 import { salvaCalibrazione } from '../lib/api/calibration.js'
 
@@ -18,29 +20,39 @@ const POINTS = [
 
 export default function Calibration() {
   const navigate = useNavigate()
-  const { videoRef, status, lastFeatures, errorMessage } = useEyeTracking({ enabled: true })
+  const { videoRef, mediaStream, status, lastFeatures, errorMessage } = useEyeTracking({ enabled: true })
   const [pointIndex, setPointIndex] = useState(0)
   const [samples, setSamples] = useState([])
   const [collecting, setCollecting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState(null)
+  const [pointProgress, setPointProgress] = useState(0)
   const collectedRef = useRef([])
+  const allSamplesRef = useRef([])
 
   useEffect(() => {
     if (!collecting || !lastFeatures?.face_detected) return
     collectedRef.current.push(lastFeatures)
+    setPointProgress(collectedRef.current.length)
+
     if (collectedRef.current.length >= SAMPLES_PER_POINT) {
       const avgX = collectedRef.current.reduce((s, f) => s + f.feature_x, 0) / collectedRef.current.length
       const avgY = collectedRef.current.reduce((s, f) => s + f.feature_y, 0) / collectedRef.current.length
       const [tx, ty] = POINTS[pointIndex]
-      setSamples((prev) => [...prev, { feature_x: avgX, feature_y: avgY, target_x_norm: tx, target_y_norm: ty }])
+      const newSample = { feature_x: avgX, feature_y: avgY, target_x_norm: tx, target_y_norm: ty }
+      
+      const nextSamples = [...allSamplesRef.current, newSample]
+      allSamplesRef.current = nextSamples
+      setSamples(nextSamples)
       collectedRef.current = []
       setCollecting(false)
+      setPointProgress(0)
+
       if (pointIndex < POINTS.length - 1) {
         setPointIndex((i) => i + 1)
       } else {
-        finalizeCalibration()
+        finalizeCalibration(nextSamples)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -48,16 +60,16 @@ export default function Calibration() {
 
   function startPointCapture() {
     collectedRef.current = []
+    setPointProgress(0)
     setCollecting(true)
   }
 
-  async function finalizeCalibration() {
+  async function finalizeCalibration(finalSamples) {
     setSaving(true)
     setError(null)
     try {
-      const allSamples = [...samples]
       const { data: fit } = await axios.post(`${EYE_TRACKING_HTTP_URL}/calibrate/fit`, {
-        samples: allSamples
+        samples: finalSamples || allSamplesRef.current
       })
       if (fit.error) throw new Error(fit.error)
 
@@ -79,13 +91,22 @@ export default function Calibration() {
 
   const currentPoint = POINTS[pointIndex]
 
+  // Coordinate stimate in tempo reale dello sguardo per il cerchietto visibile
+  const estimatedGaze = useMemo(() => {
+    if (!lastFeatures?.face_detected) return null
+    return [lastFeatures.feature_x, lastFeatures.feature_y]
+  }, [lastFeatures])
+
   return (
     <AppShell>
-      <h1 className="font-display text-2xl md:text-3xl font-semibold mb-2">Calibrazione sguardo</h1>
-      <p className="text-mist-muted mb-6 max-w-xl">
-        Guarda ogni pallino quando appare e resta fermo per un istante: il microservizio di
-        eye-tracking Python apprende la relazione tra la posizione della tua iride e lo schermo.
-      </p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="font-display text-2xl md:text-3xl font-semibold">Calibrazione sguardo</h1>
+          <p className="text-mist-muted mt-1 max-w-xl">
+            Guarda ogni cerchio quando appare e mantieni lo sguardo fisso: il modello impara la geometria dei tuoi occhi.
+          </p>
+        </div>
+      </div>
 
       <video ref={videoRef} className="hidden" muted playsInline />
 
@@ -102,45 +123,89 @@ export default function Calibration() {
       )}
 
       {done ? (
-        <div className="rounded-2xl border border-okgreen/30 bg-okgreen/10 p-8 max-w-lg flex flex-col items-center text-center gap-4">
+        <div className="rounded-2xl border border-okgreen/30 bg-okgreen/10 p-8 max-w-lg flex flex-col items-center text-center gap-4 shadow-card mx-auto">
           <GazeReticle mode="idle" size={64} locked />
-          <h2 className="font-display text-xl font-semibold text-okgreen">Calibrazione completata</h2>
+          <h2 className="font-display text-xl font-semibold text-okgreen">Calibrazione completata con successo!</h2>
           <p className="text-mist-muted text-sm">
-            Il profilo è stato salvato. Ora puoi avviare un esercizio con tracciamento live.
+            Il profilo è stato salvato nel database. Ora puoi avviare qualsiasi esercizio con precisione ottimale.
           </p>
           <button
             onClick={() => navigate('/esercizi')}
-            className="bg-iris text-ink font-semibold rounded-xl px-5 py-2.5 hover:brightness-110 transition"
+            className="bg-iris text-ink font-semibold rounded-xl px-6 py-2.5 hover:brightness-110 transition shadow-lg"
           >
             Vai agli esercizi
           </button>
         </div>
       ) : (
-        <div className="relative w-full max-w-4xl aspect-video rounded-2xl border border-ink-border bg-ink-panel/50 overflow-hidden">
-          {status === 'streaming' && !saving && (
-            <button
-              style={{
-                position: 'absolute',
-                left: `${currentPoint[0] * 100}%`,
-                top: `${currentPoint[1] * 100}%`,
-                transform: 'translate(-50%, -50%)'
-              }}
-              onClick={startPointCapture}
-              disabled={collecting}
-              className="z-10"
-            >
-              <GazeReticle mode="idle" size={56} locked={collecting} />
-            </button>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+          {/* Area Principale di Calibrazione */}
+          <div className="lg:col-span-3">
+            <div className="relative w-full aspect-video rounded-2xl border border-ink-border bg-ink-panel/60 overflow-hidden shadow-card">
+              {/* Cerchietto dello sguardo in tempo reale visibile durante la calibrazione */}
+              {status === 'streaming' && estimatedGaze && (
+                <GazePointer
+                  x={estimatedGaze[0]}
+                  y={estimatedGaze[1]}
+                  onTarget={collecting}
+                  label={collecting ? 'CAMPIONAMENTO' : 'TUO SGUARDO'}
+                />
+              )}
 
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center">
-            {status === 'connecting' && <p className="text-mist-muted text-sm">Attivazione webcam…</p>}
-            {status === 'streaming' && !saving && (
-              <p className="text-sm text-mist-muted">
-                Punto {pointIndex + 1} di {POINTS.length} — clicca sul reticolo e fissalo
-              </p>
+              {status === 'streaming' && !saving && (
+                <button
+                  style={{
+                    position: 'absolute',
+                    left: `${currentPoint[0] * 100}%`,
+                    top: `${currentPoint[1] * 100}%`,
+                    transform: 'translate(-50%, -50%)'
+                  }}
+                  onClick={startPointCapture}
+                  disabled={collecting}
+                  className="z-10 focus:outline-none transition-transform hover:scale-105"
+                >
+                  <GazeReticle mode="idle" size={56} locked={collecting} />
+                  {collecting && (
+                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] text-emerald-400 font-mono whitespace-nowrap bg-ink/80 px-1.5 py-0.5 rounded">
+                      {pointProgress}/{SAMPLES_PER_POINT}
+                    </div>
+                  )}
+                </button>
+              )}
+
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-ink-panel/90 px-4 py-2 rounded-xl backdrop-blur border border-ink-border shadow-lg">
+                {status === 'connecting' && <p className="text-mist-muted text-sm animate-pulse">Attivazione webcam…</p>}
+                {status === 'streaming' && !saving && (
+                  <p className="text-sm font-medium">
+                    Punto <span className="text-iris font-semibold">{pointIndex + 1}</span> di {POINTS.length} —{' '}
+                    {collecting ? (
+                      <span className="text-emerald-400 font-semibold">Fissa il punto…</span>
+                    ) : (
+                      <span className="text-mist-muted">clicca sul cerchio per calibrare</span>
+                    )}
+                  </p>
+                )}
+                {saving && <p className="text-sm text-iris animate-pulse font-semibold">Calcolo matrice di calibrazione in corso…</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Pannello Laterale Esterno: Fotocamera & Istruzioni */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            {status === 'streaming' && (
+              <CameraPreview
+                mediaStream={mediaStream}
+                lastFeatures={lastFeatures}
+                status={status}
+                className="w-full"
+              />
             )}
-            {saving && <p className="text-sm text-iris">Calcolo calibrazione…</p>}
+
+            <div className="rounded-2xl border border-ink-border bg-ink-panel/40 p-4 flex flex-col gap-2 text-xs text-mist-muted shadow-card">
+              <h3 className="font-semibold text-mist text-sm">Guida alla calibrazione</h3>
+              <p>1. Mantieni la testa ferma di fronte allo schermo (distanza ideale 50-65 cm).</p>
+              <p>2. Clicca sul bersaglio azzurro e fissalo con gli occhi finché il conteggio arriva a 20.</p>
+              <p>3. Il cerchietto arancione mostrerà in tempo reale la stima del tuo sguardo.</p>
+            </div>
           </div>
         </div>
       )}

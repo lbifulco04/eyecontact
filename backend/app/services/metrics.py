@@ -17,11 +17,12 @@ def calcola_e_aggiorna_metriche_utente(
         db.add(metriche)
         db.flush()
 
-    # 2. Recupera le sessioni dell'utente ordinate per data decrescente
+    # 2. Recupera solo le ultime 2 sessioni dell'utente ordinate per data decrescente (O(1))
     stmt_sessioni = (
         select(Sessione)
         .where(Sessione.id_utente == id_utente)
         .order_by(Sessione.data_ora_inizio.desc())
+        .limit(2)
     )
     sessioni = db.exec(stmt_sessioni).all()
 

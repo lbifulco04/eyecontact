@@ -34,15 +34,20 @@ def crea_sessione(
     if sessione_in.affaticamento_pre is not None and sessione_in.affaticamento_post is not None:
         delta = sessione_in.affaticamento_post - sessione_in.affaticamento_pre
 
-    # 2. Validazione degli esercizi inclusi
+    # 2. Validazione degli esercizi inclusi (Batch query per evitare N+1)
     completati_count = 0
     totali_count = len(sessione_in.dettagli_esercizi) if sessione_in.dettagli_esercizi else 0
 
     esercizi_db = []
     if sessione_in.dettagli_esercizi:
+        ex_ids = [ex.id_esercizio for ex in sessione_in.dettagli_esercizi]
+        existing_exs = {
+            e.id_esercizio: e
+            for e in db.exec(select(Esercizio).where(Esercizio.id_esercizio.in_(ex_ids))).all()
+        }
+
         for ex in sessione_in.dettagli_esercizi:
-            ex_db = db.get(Esercizio, ex.id_esercizio)
-            if not ex_db:
+            if ex.id_esercizio not in existing_exs:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, 
                     detail=f"Esercizio con ID {ex.id_esercizio} non trovato"
@@ -78,7 +83,7 @@ def crea_sessione(
     db.commit()
     db.refresh(db_sessione)
 
-    # 5. Esecuzione Calcolo Metriche & Streak Utente
+    # 5. Esecuzione Calcolo Metriche & Streak Utente (O(1))
     calcola_e_aggiorna_metriche_utente(
         db=db,
         id_utente=utente_attuale.id_utente,
@@ -90,14 +95,18 @@ def crea_sessione(
 
 @router.get("/me", response_model=List[SessioneResponse])
 def leggi_mie_sessioni(
+    limit: int = 50,
+    offset: int = 0,
     db: DBSession = Depends(get_session),
     utente_attuale: Utente = Depends(get_current_user)
 ):
-    """Restituisce la lista di tutte le sessioni svolte dall'utente autenticato."""
+    """Restituisce la lista paginata delle sessioni svolte dall'utente autenticato."""
     statement = (
         select(Sessione)
         .where(Sessione.id_utente == utente_attuale.id_utente)
         .order_by(Sessione.data_ora_inizio.desc())
+        .offset(offset)
+        .limit(limit)
     )
     return db.exec(statement).all()
 

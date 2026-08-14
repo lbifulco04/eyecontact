@@ -10,7 +10,7 @@ connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL
 
 engine = create_engine(
     settings.DATABASE_URL, 
-    echo=True,  
+    echo=settings.DB_ECHO,  
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,

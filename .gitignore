@@ -89,3 +89,9 @@ Thumbs.db
 # 6. Docker & Logs
 *.log
 docker-compose.override.yml
+
+
+.geminirules
+
+
+

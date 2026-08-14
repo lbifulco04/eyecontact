@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "secret")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "eyecontact_db")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+    DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() in ("true", "1", "t")
     
     @property
     def DATABASE_URL(self) -> str:
