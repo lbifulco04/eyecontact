@@ -20,7 +20,8 @@ const POINTS = [
 
 export default function Calibration() {
   const navigate = useNavigate()
-  const { videoRef, mediaStream, status, lastFeatures, errorMessage } = useEyeTracking({ enabled: true })
+  // smooth=false per disattivare il filtro durante la calibrazione
+  const { videoRef, mediaStream, status, lastFeatures, errorMessage } = useEyeTracking({ enabled: true, smooth: true })
   const [pointIndex, setPointIndex] = useState(0)
   const [samples, setSamples] = useState([])
   const [collecting, setCollecting] = useState(false)
@@ -39,8 +40,17 @@ export default function Calibration() {
     if (collectedRef.current.length >= SAMPLES_PER_POINT) {
       const avgX = collectedRef.current.reduce((s, f) => s + f.feature_x, 0) / collectedRef.current.length
       const avgY = collectedRef.current.reduce((s, f) => s + f.feature_y, 0) / collectedRef.current.length
+      const avgHeadYaw = collectedRef.current.reduce((s, f) => s + (f.head_yaw || 0), 0) / collectedRef.current.length
+      const avgHeadPitch = collectedRef.current.reduce((s, f) => s + (f.head_pitch || 0), 0) / collectedRef.current.length
       const [tx, ty] = POINTS[pointIndex]
-      const newSample = { feature_x: avgX, feature_y: avgY, target_x_norm: tx, target_y_norm: ty }
+      const newSample = {
+        feature_x: avgX,
+        feature_y: avgY,
+        head_yaw: avgHeadYaw,
+        head_pitch: avgHeadPitch,
+        target_x_norm: tx,
+        target_y_norm: ty
+      }
       
       const nextSamples = [...allSamplesRef.current, newSample]
       allSamplesRef.current = nextSamples
@@ -55,7 +65,6 @@ export default function Calibration() {
         finalizeCalibration(nextSamples)
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastFeatures, collecting])
 
   function startPointCapture() {
@@ -72,6 +81,11 @@ export default function Calibration() {
         samples: finalSamples || allSamplesRef.current
       })
       if (fit.error) throw new Error(fit.error)
+
+      // Salva i coefficienti localmente per l'uso in altre parti dell'app
+      localStorage.setItem('calibration_coef_x', JSON.stringify(fit.coef_x))
+      localStorage.setItem('calibration_coef_y', JSON.stringify(fit.coef_y))
+      localStorage.setItem('calibration_model', fit.model)
 
       await salvaCalibrazione({
         device_info: `${navigator.userAgent.slice(0, 60)}`,
@@ -91,9 +105,10 @@ export default function Calibration() {
 
   const currentPoint = POINTS[pointIndex]
 
-  // Coordinate stimate in tempo reale dello sguardo per il cerchietto visibile
+  // Mostra il puntino con le feature grezze (non calibrate) per feedback visivo durante la calibrazione
   const estimatedGaze = useMemo(() => {
     if (!lastFeatures?.face_detected) return null
+    // Se noti inversioni, puoi correggerle qui (es. x = 1 - x)
     return [lastFeatures.feature_x, lastFeatures.feature_y]
   }, [lastFeatures])
 

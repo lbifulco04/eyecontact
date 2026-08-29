@@ -3,6 +3,7 @@ import React from 'react'
 /**
  * Cerchietto luminoso in tempo reale che indica la posizione stimata dello sguardo dell'utente.
  * Colore ambra brillante (o verde smeraldo quando agganciato sul bersaglio).
+ * La transizione è molto breve per evitare ritardi, ma non assente per ridurre jitter.
  */
 export default function GazePointer({
   x = null,
@@ -22,7 +23,7 @@ export default function GazePointer({
         transform: 'translate(-50%, -50%)',
         pointerEvents: 'none',
         zIndex: 25,
-        transition: 'left 0.06s ease-out, top 0.06s ease-out',
+        transition: 'left 0.04s linear, top 0.04s linear',
         willChange: 'left, top'
       }}
       className={className}

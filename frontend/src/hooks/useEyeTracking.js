@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const WS_URL = import.meta.env.VITE_EYE_TRACKING_WS_URL || 'ws://localhost:8100/ws/track'
-const SEND_INTERVAL_MS = 100 // ~10 fps: sufficiente per tracciamento real-time, ultra-leggero su CPU
+const SEND_INTERVAL_MS = 100 // ~10 fps
 
-/**
- * Cattura il flusso video dalla webcam, lo invia in formato binario compresso (JPEG Blob)
- * al microservizio Python di eye-tracking via WebSocket e restituisce le feature grezze di sguardo.
- */
-export function useEyeTracking({ enabled, onFeatures = null } = {}) {
+export function useEyeTracking({ enabled, onFeatures = null, smooth = true } = {}) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const wsRef = useRef(null)
@@ -21,7 +17,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
     onFeaturesRef.current = onFeatures
   }, [onFeatures])
 
-  const [status, setStatus] = useState('idle') // idle | connecting | streaming | error
+  const [status, setStatus] = useState('idle')
   const [lastFeatures, setLastFeatures] = useState(null)
   const [errorMessage, setErrorMessage] = useState(null)
   const [mediaStream, setMediaStream] = useState(null)
@@ -44,8 +40,8 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
       canvasRef.current = document.createElement('canvas')
     }
     const canvas = canvasRef.current
-    const w = 320
-    const h = Math.round((video.videoHeight / (video.videoWidth || 1)) * w) || 240
+    const w = 640
+    const h = Math.round((video.videoHeight / (video.videoWidth || 1)) * w) || 480
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w
       canvas.height = h
@@ -58,7 +54,10 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
       (blob) => {
         isSendingRef.current = false
         if (blob && ws.readyState === WebSocket.OPEN) {
+          console.log(`[useEyeTracking] Invio blob di ${blob.size} bytes`)
           ws.send(blob)
+        } else {
+          console.warn('[useEyeTracking] Blob nullo o WebSocket non aperto')
         }
       },
       'image/jpeg',
@@ -91,12 +90,15 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
           videoRef.current.srcObject = stream
           try {
             await videoRef.current.play()
+            console.log('[useEyeTracking] Video avviato')
           } catch {
             // Ignora autostart interrupt
           }
         }
 
-        const ws = new WebSocket(WS_URL)
+        const wsUrl = smooth ? WS_URL : `${WS_URL}?smooth=false`
+        console.log(`[useEyeTracking] Connessione WebSocket a ${wsUrl}`)
+        const ws = new WebSocket(wsUrl)
         ws.binaryType = 'blob'
         wsRef.current = ws
 
@@ -105,6 +107,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
             ws.close()
             return
           }
+          console.log('[useEyeTracking] WebSocket aperto')
           setStatus('streaming')
           intervalRef.current = setInterval(sendFrame, SEND_INTERVAL_MS)
         }
@@ -112,6 +115,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data)
+            console.log('[useEyeTracking] Ricevuto:', data)
             featuresRef.current = data
             setLastFeatures(data)
             if (onFeaturesRef.current) {
@@ -123,6 +127,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
         }
 
         ws.onerror = () => {
+          console.error('[useEyeTracking] Errore WebSocket')
           setStatus('error')
           setErrorMessage('Impossibile connettersi al servizio di eye-tracking.')
         }
@@ -131,6 +136,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
           if (!cancelled) setStatus('idle')
         }
       } catch (err) {
+        console.error('[useEyeTracking] Errore getUserMedia:', err)
         setStatus('error')
         setErrorMessage('Accesso alla webcam negato o non disponibile.')
       }
@@ -147,7 +153,7 @@ export function useEyeTracking({ enabled, onFeatures = null } = {}) {
       streamRef.current = null
       setMediaStream(null)
     }
-  }, [enabled, sendFrame])
+  }, [enabled, sendFrame, smooth])
 
   return {
     videoRef,
